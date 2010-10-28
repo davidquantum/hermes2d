@@ -85,6 +85,7 @@ const int P_INIT = 2;       	        // Initial polynomial degree of all mesh el
 const int REF_INIT = 1;     	        // Number of initial refinements
 const bool MULTIMESH = true;	        // Multimesh?
 const int TIME_DISCR = 2;             // 1 for implicit Euler, 2 for Crank-Nicolson
+const bool PID = false;
 
 /* Adaptive solution parameters */
 const bool SOLVE_ON_COARSE_MESH = false;  // true... Newton is done on coarse mesh in every adaptivity step.
@@ -107,7 +108,7 @@ const int STRATEGY = 0;               // Adaptive strategy:
                                       // STRATEGY = 2 ... refine all elements whose error is larger
                                       //   than THRESHOLD.
                                       // More adaptive strategies can be created in adapt_ortho_h1.cpp.
-const CandList CAND_LIST = H2D_HP_ANISO; // Predefined list of element refinement candidates. Possible values are
+const CandList CAND_LIST = H2D_HP_ANISO_H; // Predefined list of element refinement candidates. Possible values are
                                          // H2D_P_ISO, H2D_P_ANISO, H2D_H_ISO, H2D_H_ANISO, H2D_HP_ISO,
                                          // H2D_HP_ANISO_H, H2D_HP_ANISO_P, H2D_HP_ANISO.
                                          // See User Documentation for details.
@@ -169,7 +170,7 @@ int main (int argc, char* argv[]) {
 
   H2DReader mloader;
 
-#define HALFREFINED 
+#define OTHER 
 
 #ifdef CIRCULAR
   mloader.load("circular.mesh", &basemesh);
@@ -274,7 +275,7 @@ int main (int argc, char* argv[]) {
   */
 
   // convergence graph, error graph
-  SimpleGraph graph_time_err, graph_time_dof, graph_time_cpu, graph_time_abserrsol;
+  SimpleGraph graph_time_err, graph_time_dof, graph_time_cpu, graph_time_rel_errC, graph_time_rel_errphi;
 
   // time measurement
   TimePeriod cpu_time;
@@ -306,7 +307,8 @@ int main (int argc, char* argv[]) {
   int at_index = 1; //for saving screenshot
   int nstep = (int) (T_FINAL / (*TAU) + 0.5);
   double time = 0.0;
-  for (int n = 1; n > 0 && time < T_FINAL; n++, time+=(*TAU)) {
+  for (int n = 1; n > 0 && time <= T_FINAL; n++) {
+    time+= *TAU;
     // Refine at each time step first, till 1 s physical time
     // After that, refine after 5 time steps.
     //if (n > 1 && n % UNREF_FREQ == 0 && (n*TAU < 0.5 || n % (UNREF_FREQ*1) == 0)) {
@@ -421,8 +423,8 @@ int main (int argc, char* argv[]) {
       Cordview.set_title(title);
       sprintf(title, "hp-mesh (phi), time level %d, adaptivity %d", n, as);
       phiordview.set_title(title);
-      //Cordview.show(&Cspace);
-      //phiordview.show(&phispace);
+      Cordview.show(&Cspace);
+      phiordview.show(&phispace);
       //Cview.show(&C_prev_newton);
       //phiview.show(&phi_prev_newton);
       #ifdef SCREENSHOT
@@ -445,7 +447,7 @@ int main (int argc, char* argv[]) {
     } else {
       sprintf(title, "phi after time step %d", n);
     }
-    /*phiview.set_title(title);
+    phiview.set_title(title);
     phiview.show(&phi_prev_newton);
     if (n == 1) {
       sprintf(title, "C after time step %d, adjust the graph and PRESS ANY KEY", n);
@@ -454,7 +456,7 @@ int main (int argc, char* argv[]) {
     }
     Cview.set_title(title);
     Cview.show(&C_prev_newton);
-    #ifdef SCREENSHOT
+    /*#ifdef SCREENSHOT
     Cview.save_numbered_screenshot("screenshots/C%03d.bmp", n, true);
     phiview.save_numbered_screenshot("screenshots/phi%03d.bmp", n, true);
     #endif
@@ -464,38 +466,49 @@ int main (int argc, char* argv[]) {
       //View::wait(H2DV_WAIT_KEYPRESS);
     }
     */
-    cpu_time.tick(HERMES_SKIP);
       // Calculate element errors and total estimate
       //H1Adapt hp(&nls);
       //hp.set_solutions(Tuple<Solution*>(&Csln_fine, &phisln_fine), 
       //    Tuple<Solution*>(&C_prev_time, &phi_prev_time));
       //err_est = hp.calc_error(H2D_ELEMENT_ERROR_ABS);
-      double abs_err = calc_error(error_fn_h1, &Csln_fine, &C_prev_time);
-      double abs_err2= calc_error(error_fn_h1, &phisln_fine, &phi_prev_time);
-      double norm = calc_norm(norm_fn_h1, &Csln_fine);
-      double norm2 = calc_norm(norm_fn_h1, &phisln_fine);
-      info("Abs norm %g and norm %g, ratio %g (for phi %g, %g, %g)",  abs_err, norm, abs_err/norm, abs_err2, norm2, abs_err2/norm2);
-      graph_time_abserrsol.add_values(time, (abs_err / norm));
-      graph_time_abserrsol.save("time_abserrsol.dat");
-      
-      err_vector.push_back((abs_err/norm));
+      if (PID) {
+        double abs_err = calc_error(error_fn_h1, &Csln_fine, &C_prev_time);
+        double abs_err2= calc_error(error_fn_h1, &phisln_fine, &phi_prev_time);
+        double norm = calc_norm(norm_fn_h1, &Csln_fine);
+        double norm2 = calc_norm(norm_fn_h1, &phisln_fine);
+        double ec = abs_err/norm;
+        double ephi = abs_err2/norm2;
+        double delta = 0.25;
+        double kp = 0.075;
+        double kl = 0.175;
+        double kD = 0.01;
+        info("Abs norm %g and norm %g, ratio %g (for phi %g, %g, %g)",  abs_err, norm, ec, abs_err2, norm2, ephi);
+        graph_time_rel_errC.add_values(time, ec);
+        graph_time_rel_errC.save("time_relerrC.dat");
+        graph_time_rel_errphi.add_values(time, ephi);
+        graph_time_rel_errphi.save("time_relerrphi.dat");
+        
+        double e = ec > ephi ? ec : ephi;
+        err_vector.push_back(e);
 
-      if (err_vector.size() > 2) {
-        int size = err_vector.size();
-        info("ERR VECTOR SUFFICIENT FOR ADAPTING");
-        double t_coeff = pow(err_vector.at(size - 2)/err_vector.at(size-1),0.075)
-            * pow(0.5/err_vector.at(size - 1), 0.175)
-            * pow(err_vector.at(size - 2)*err_vector.at(size - 2)/(err_vector.at(size -1)*err_vector.at(size-3)),0.01);
-        info("COEFFICIENT %g", t_coeff);
-        (*TAU) = (*TAU)*t_coeff;
+        if (err_vector.size() > 2 && e<=0.25) {
+          int size = err_vector.size();
+          info("ERR VECTOR SUFFICIENT FOR ADAPTING");
+          double t_coeff = pow(err_vector.at(size - 2)/err_vector.at(size-1),kp)
+              * pow(0.25/err_vector.at(size - 1), kl)
+              * pow(err_vector.at(size - 2)*err_vector.at(size - 2)/(err_vector.at(size -1)*err_vector.at(size-3)), kD);
+          info("COEFFICIENT %g", t_coeff);
+          (*TAU) = (*TAU)*t_coeff;
+        }
       }
+      cpu_time.tick(HERMES_SKIP);
 
 
     phi_prev_time.copy(&phisln_fine);
     C_prev_time.copy(&Csln_fine);
 
   }
-  //View::wait();
+  View::wait();
 }
 
 /// \}
