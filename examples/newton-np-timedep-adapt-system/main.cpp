@@ -77,7 +77,9 @@ const double E_FIELD = VOLTAGE / height;    // Boundary condtion for positive vo
 /* Simulation parameters */
 const int PROJ_TYPE = 1;              // For the projection of the initial condition 
                                       // on the initial mesh: 1 = H1 projection, 0 = L2 projection
-const double TAU = 0.05;              // Size of the time step
+double INIT_TAU = 0.05;
+double *TAU = &INIT_TAU;              // Size of the time step
+std::vector<double> err_vector;
 const int T_FINAL = 3;                // Final time
 const int P_INIT = 2;       	        // Initial polynomial degree of all mesh elements.
 const int REF_INIT = 1;     	        // Number of initial refinements
@@ -272,7 +274,7 @@ int main (int argc, char* argv[]) {
   */
 
   // convergence graph, error graph
-  SimpleGraph graph_time_err, graph_time_dof, graph_time_cpu;
+  SimpleGraph graph_time_err, graph_time_dof, graph_time_cpu, graph_time_abserrsol;
 
   // time measurement
   TimePeriod cpu_time;
@@ -302,14 +304,15 @@ int main (int argc, char* argv[]) {
   */
 
   int at_index = 1; //for saving screenshot
-  int nstep = (int) (T_FINAL / TAU + 0.5);
-  for (int n = 1; n <= nstep; n++) {
+  int nstep = (int) (T_FINAL / (*TAU) + 0.5);
+  double time = 0.0;
+  for (int n = 1; n > 0 && time < T_FINAL; n++, time+=(*TAU)) {
     // Refine at each time step first, till 1 s physical time
     // After that, refine after 5 time steps.
     //if (n > 1 && n % UNREF_FREQ == 0 && (n*TAU < 0.5 || n % (UNREF_FREQ*1) == 0)) {
     cpu_time.tick();
     if (n > 1 && n % UNREF_FREQ == 0) {
-      info("-------------------------------------------------------------------------- n = %d, unrefining!", n);
+      info("--------------------------------------------------------------- n = %d time=%g, unrefining!", n, time);
 
       Cmesh.copy(&basemesh);
       if (MULTIMESH) {
@@ -430,11 +433,11 @@ int main (int argc, char* argv[]) {
       cpu_time.tick(HERMES_SKIP);
     } while (!done);
     cpu_time.tick();
-    graph_time_err.add_values(n * TAU, err_est);
+    graph_time_err.add_values(time, err_est);
     graph_time_err.save("time_error.dat");
-    graph_time_dof.add_values(n * TAU,  Cspace.get_num_dofs() + phispace.get_num_dofs());
+    graph_time_dof.add_values(time,  Cspace.get_num_dofs() + phispace.get_num_dofs());
     graph_time_dof.save("time_dof.dat");
-    graph_time_cpu.add_values(n * TAU, cpu_time.accumulated());
+    graph_time_cpu.add_values(time, cpu_time.accumulated());
     graph_time_cpu.save("time_cpu.dat");
 
     if (n == 1) {
@@ -462,6 +465,32 @@ int main (int argc, char* argv[]) {
     }
     */
     cpu_time.tick(HERMES_SKIP);
+      // Calculate element errors and total estimate
+      //H1Adapt hp(&nls);
+      //hp.set_solutions(Tuple<Solution*>(&Csln_fine, &phisln_fine), 
+      //    Tuple<Solution*>(&C_prev_time, &phi_prev_time));
+      //err_est = hp.calc_error(H2D_ELEMENT_ERROR_ABS);
+      double abs_err = calc_error(error_fn_h1, &Csln_fine, &C_prev_time);
+      double abs_err2= calc_error(error_fn_h1, &phisln_fine, &phi_prev_time);
+      double norm = calc_norm(norm_fn_h1, &Csln_fine);
+      double norm2 = calc_norm(norm_fn_h1, &phisln_fine);
+      info("Abs norm %g and norm %g, ratio %g (for phi %g, %g, %g)",  abs_err, norm, abs_err/norm, abs_err2, norm2, abs_err2/norm2);
+      graph_time_abserrsol.add_values(time, (abs_err / norm));
+      graph_time_abserrsol.save("time_abserrsol.dat");
+      
+      err_vector.push_back((abs_err/norm));
+
+      if (err_vector.size() > 2) {
+        int size = err_vector.size();
+        info("ERR VECTOR SUFFICIENT FOR ADAPTING");
+        double t_coeff = pow(err_vector.at(size - 2)/err_vector.at(size-1),0.075)
+            * pow(0.5/err_vector.at(size - 1), 0.175)
+            * pow(err_vector.at(size - 2)*err_vector.at(size - 2)/(err_vector.at(size -1)*err_vector.at(size-3)),0.01);
+        info("COEFFICIENT %g", t_coeff);
+        (*TAU) = (*TAU)*t_coeff;
+      }
+
+
     phi_prev_time.copy(&phisln_fine);
     C_prev_time.copy(&Csln_fine);
 
