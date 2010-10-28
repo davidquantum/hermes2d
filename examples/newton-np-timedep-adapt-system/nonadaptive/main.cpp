@@ -66,6 +66,7 @@ const scalar C0 = 1200;	              // [mol/m^3] Anion and counterion concentr
 
 /* For Neumann boundary */
 const double height = 180e-6;	              // [m] thickness of the domain
+const double width = 1e-4; 
 const double E_FIELD = VOLTAGE / height;    // Boundary condtion for positive voltage electrode
 
 
@@ -77,7 +78,7 @@ const int T_FINAL = 5;                // Final time
 const int P_INIT = 3;       	        // Initial polynomial degree of all mesh elements.
 const int REF_INIT = 5;     	        // Number of initial refinements
 const bool MULTIMESH = false;	        // Multimesh?
-const int TIME_DISCR = 1;             // 1 for implicit Euler, 2 for Crank-Nicolson
+const int TIME_DISCR = 2;             // 1 for implicit Euler, 2 for Crank-Nicolson
 const int VOLT_BOUNDARY = 1;          // 1 for Dirichlet, 2 for Neumann
 
 /* Nonadaptive solution parameters */
@@ -107,7 +108,8 @@ scalar C_essential_bc_values(int ess_bdy_marker, double x, double y) {
 
 // Diricleht Boundary conditions for Poisson equation.
 scalar phi_essential_bc_values(int ess_bdy_marker, double x, double y) {
-  return ess_bdy_marker == TOP_MARKER ? VOLTAGE : 0.0;
+  return ess_bdy_marker == TOP_MARKER ? VOLTAGE/2 + (x * VOLTAGE / 2 / width) : 0.0;
+  //return ess_bdy_marker == TOP_MARKER ? VOLTAGE : 0.0;
 }
 
 scalar voltage_ic(double x, double y, double &dx, double &dy) {
@@ -138,9 +140,10 @@ int main (int argc, char* argv[]) {
 #else
   mloader.load("../small.mesh", &basemesh);
   basemesh.refine_all_elements(1);
-  //basemesh.refine_all_elements(1); // when only p-adapt is used
+  basemesh.refine_all_elements(1); // when only p-adapt is used
   //basemesh.refine_all_elements(1); // when only p-adapt is used
   basemesh.refine_towards_boundary(TOP_MARKER, REF_INIT);
+  basemesh.refine_towards_boundary(SIDE_MARKER, REF_INIT);
   //basemesh.refine_towards_boundary(BOT_MARKER, (REF_INIT - 1) + 8); // when only p-adapt is used
   basemesh.refine_towards_boundary(BOT_MARKER, REF_INIT - 1);
 #endif
@@ -217,6 +220,11 @@ int main (int argc, char* argv[]) {
     Cview.show(&C_prev_newton);
     phi_prev_time.copy(&phi_prev_newton);
     C_prev_time.copy(&C_prev_newton);
+    if (n == 14) {
+      // Wait for key press, so one can go to 3D mode
+      // which is way more informative in case of Nernst Planck.
+      View::wait(H2DV_WAIT_KEYPRESS);
+    }
   }
   View::wait();
 

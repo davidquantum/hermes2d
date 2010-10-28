@@ -300,7 +300,7 @@ void View::draw_fps()
   sprintf((char*)buffer, "avg. frame: %.1f ms", (float)(frame_time_sum / FPS_FRAME_SIZE));
 
   //prepare environment
-  void* font = GLUT_BITMAP_HELVETICA_10;
+  void* font = GLUT_BITMAP_HELVETICA_18;
   int width_px = glutBitmapLength(font, buffer);
   int height_px = glutBitmapHeight(font);
   int edge_thickness = 2;
@@ -822,8 +822,8 @@ void View::save_screenshot_internal(const char *file_name)
   info_header.bit_count = 32; // 4 bytes per pixel = 32 bits
   info_header.compression = 0;
   info_header.size_image = output_width * output_height * 4;
-  info_header.xdpi = 2835; // 72 dpi
-  info_header.ydpi = 2835; // 72 dpi
+  info_header.xdpi = 4*2835; // 72 dpi
+  info_header.ydpi = 4*2835; // 72 dpi
   info_header.clr_used = 0;
   info_header.clr_important = 0;
 

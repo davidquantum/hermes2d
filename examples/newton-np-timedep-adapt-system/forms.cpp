@@ -107,8 +107,8 @@ Scalar J_cranic_DFcDYc(int n, double *wt, Func<Scalar> *u_ext[], Func<Real> *u, 
   Func<Scalar>* phi_prev_time = ext->fn[1];
   for (int i = 0; i < n; i++) {
     result += wt[i] * (u->val[i] * v->val[i] / TAU +
-        D * (u->dx[i] * v->dx[i] + u->dy[i] * v->dy[i]) +
-        0.5 * K * u->val[i] * (phi_prev_time->dx[i] * v->dx[i] + phi_prev_time->dy[i] * v->dy[i]) +
+        0.5* D * (u->dx[i] * v->dx[i] + u->dy[i] * v->dy[i]) +
+        //0.5 * K * u->val[i] * (phi_prev_time->dx[i] * v->dx[i] + phi_prev_time->dy[i] * v->dy[i]) +
         0.5 * K * u->val[i] * (phi_prev_newton->dx[i] * v->dx[i] + phi_prev_newton->dy[i] * v->dy[i]));
   }
   return result;
@@ -121,7 +121,7 @@ Scalar J_cranic_DFcDYphi(int n, double *wt, Func<Scalar> *u_ext[], Func<Real> *u
   Func<Scalar>* C_prev_time = ext->fn[1];
 	for (int i = 0; i < n; i++) {
 		result += wt[i] * K * (u->dx[i] * v->dx[i] + u->dy[i] * v->dy[i]) * 
-      (0.5 * C_prev_newton->val[i] + 0.5 * C_prev_time->val[i]);
+      (0.5 * C_prev_newton->val[i] /*+ 0.5 * C_prev_time->val[i]*/);
 	}
 	return result;
 }

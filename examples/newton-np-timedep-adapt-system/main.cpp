@@ -60,7 +60,7 @@ const double D = 10e-11; 	            // [m^2/s] Diffusion coefficient.
 const double R = 8.31; 		            // [J/mol*K] Gas constant.
 const double T = 293; 		            // [K] Aboslute temperature.
 const double F = 96485.3415;	            // [s * A / mol] Faraday constant.
-const double eps = 2.5e-2; 	            // [F/m] Electric permeability.
+const double eps = 2.5e-2;	            // [F/m] Electric permeability.
 const double mu = D / (R * T);              // Mobility of ions.
 const double z = 1;		            // Charge number.
 const double K = z * mu * F;                // Constant for equation.
@@ -70,6 +70,7 @@ const scalar C0 = 1200;	                    // [mol/m^3] Anion and counterion co
 
 /* For Neumann boundary */
 const double height = 180e-6;	            // [m] thickness of the domain.
+const double width = 1e-4; 
 const double E_FIELD = VOLTAGE / height;    // Boundary condtion for positive voltage electrode
 
 
@@ -77,7 +78,7 @@ const double E_FIELD = VOLTAGE / height;    // Boundary condtion for positive vo
 const int PROJ_TYPE = 1;              // For the projection of the initial condition 
                                       // on the initial mesh: 1 = H1 projection, 0 = L2 projection
 const double TAU = 0.05;              // Size of the time step
-const int T_FINAL = 2;              // Final time
+const int T_FINAL = 3;                // Final time
 const int P_INIT = 2;       	        // Initial polynomial degree of all mesh elements.
 const int REF_INIT = 1;     	        // Number of initial refinements
 const bool MULTIMESH = true;	        // Multimesh?
@@ -145,6 +146,7 @@ scalar C_essential_bc_values(int ess_bdy_marker, double x, double y) {
 // Diricleht Boundary conditions for Poisson equation.
 scalar phi_essential_bc_values(int ess_bdy_marker, double x, double y) {
   return ess_bdy_marker == TOP_MARKER ? VOLTAGE : 0.0;
+  //return ess_bdy_marker == TOP_MARKER ? VOLTAGE/2 + (x * VOLTAGE / 2 / width) : 0.0;
 }
 
 scalar voltage_ic(double x, double y, double &dx, double &dy) {
@@ -165,21 +167,44 @@ int main (int argc, char* argv[]) {
 
   H2DReader mloader;
 
+#define HALFREFINED 
+
 #ifdef CIRCULAR
   mloader.load("circular.mesh", &basemesh);
   basemesh.refine_all_elements(0);
   basemesh.refine_towards_boundary(TOP_MARKER, 2);
   basemesh.refine_towards_boundary(BOT_MARKER, 4);
-  MeshView mview("Mesh", 0, 600, 400, 400);
-  mview.show(&basemesh);
+  MeshView mview("Mesh", 0, 600, 800, 800);
+  //mview.show(&basemesh);
 #else
   mloader.load("small.mesh", &basemesh);
   basemesh.refine_all_elements(1);
-  //basemesh.refine_all_elements(1); // when only p-adapt is used
-  //basemesh.refine_all_elements(1); // when only p-adapt is used
+#ifdef COARSE
   basemesh.refine_towards_boundary(TOP_MARKER, REF_INIT);
-  //basemesh.refine_towards_boundary(BOT_MARKER, (REF_INIT - 1) + 8); // when only p-adapt is used
   basemesh.refine_towards_boundary(BOT_MARKER, REF_INIT - 1);
+#endif
+#ifdef HALFREFINED
+  basemesh.refine_towards_boundary(TOP_MARKER, REF_INIT);
+  basemesh.refine_towards_boundary(BOT_MARKER, (REF_INIT - 1) + 8); // when only p-adapt is used
+  basemesh.refine_towards_boundary(BOT_MARKER, REF_INIT - 1);
+#endif
+#ifdef REFINED
+  basemesh.refine_all_elements(1); // when only p-adapt is used and const voltage
+  basemesh.refine_all_elements(1); // when only p-adapt is used and const voltage
+  basemesh.refine_towards_boundary(TOP_MARKER, REF_INIT);
+  basemesh.refine_towards_boundary(BOT_MARKER, (REF_INIT - 1) + 8); // when only p-adapt is used
+  basemesh.refine_towards_boundary(BOT_MARKER, REF_INIT - 1);
+#endif
+#ifdef OTHER
+  //basemesh.refine_all_elements(1); // when only p-adapt is used and const voltage
+  //basemesh.refine_all_elements(1); // when only p-adapt is used and const voltage
+  basemesh.refine_towards_boundary(TOP_MARKER, REF_INIT);
+  basemesh.refine_towards_boundary(SIDE_MARKER, REF_INIT);  // only when nonconstant voltage used
+  basemesh.refine_towards_boundary(BOT_MARKER, (REF_INIT - 1) + 8); // when only p-adapt is used
+  basemesh.refine_towards_boundary(BOT_MARKER, REF_INIT - 1);
+#endif
+  MeshView mview("Mesh", 0, 600, 800, 800);
+  //mview.show(&basemesh);
 #endif
 
   Cmesh.copy(&basemesh);
@@ -234,22 +259,25 @@ int main (int argc, char* argv[]) {
   
   char title[100];
   //VectorView vview("electric field [V/m]", 0, 0, 600, 600);
-  ScalarView Cview("Concentration [mol/m3]", 0, 0, 400, 400);
-  ScalarView phiview("Voltage [V]", 400, 0, 400, 400);
-  OrderView Cordview("C order", 0, 450, 400, 400);
-  OrderView phiordview("Phi order", 400, 450, 400, 400);
+  ScalarView Cview("Concentration [mol/m3]", 0, 0, 600, 800);
+  ScalarView phiview("Voltage [V]", 400, 0, 600, 800);
+  OrderView Cordview("C order", 0, 450, 600, 800);
+  OrderView phiordview("Phi order", 400, 450, 600, 800);
   
+  /*
   phiview.show(&phi_prev_newton);
   Cview.show(&C_prev_newton);
   Cordview.show(&Cspace);
   phiordview.show(&phispace);
+  */
 
   // convergence graph, error graph
   SimpleGraph graph_time_err, graph_time_dof, graph_time_cpu;
 
   // time measurement
   TimePeriod cpu_time;
-  
+  cpu_time.tick();
+
   // create a selector which will select optimal candidate
   H1ProjBasedSelector selector(CAND_LIST, CONV_EXP, H2DRS_DEFAULT_ORDER);
   
@@ -264,20 +292,24 @@ int main (int argc, char* argv[]) {
   Csln_coarse.copy(&C_prev_newton);
   phisln_coarse.copy(&phi_prev_newton);
 
+  /*
   sprintf(title, "phi initial coarse mesh solution");
   phiview.set_title(title);
   phiview.show(&phi_prev_newton);
   sprintf(title, "C initial coarse mesh solution");
   Cview.set_title(title);
   Cview.show(&C_prev_newton);
+  */
 
   int at_index = 1; //for saving screenshot
   int nstep = (int) (T_FINAL / TAU + 0.5);
   for (int n = 1; n <= nstep; n++) {
+    // Refine at each time step first, till 1 s physical time
+    // After that, refine after 5 time steps.
+    //if (n > 1 && n % UNREF_FREQ == 0 && (n*TAU < 0.5 || n % (UNREF_FREQ*1) == 0)) {
+    cpu_time.tick();
     if (n > 1 && n % UNREF_FREQ == 0) {
-      
-      // Time measurement
-      cpu_time.tick(HERMES_SKIP);
+      info("-------------------------------------------------------------------------- n = %d, unrefining!", n);
 
       Cmesh.copy(&basemesh);
       if (MULTIMESH) {
@@ -289,20 +321,17 @@ int main (int argc, char* argv[]) {
       // Project the fine mesh solution on the globally derefined mesh.
       info("---- Time step %d, projecting fine mesh solution on globally derefined mesh:\n", n);
 
-      // Time measurement
-      cpu_time.tick(HERMES_SKIP);
       nls.project_global(Tuple<MeshFunction*>(&Csln_fine, &phisln_fine), 
                          Tuple<Solution*>(&C_prev_newton, &phi_prev_newton));
 
       if (SOLVE_ON_COARSE_MESH) {
         // Newton's loop on the globally derefined mesh.
-        info("---- Time step %d, Newton solve on globally derefined mesh:\n", n);
+        //info("---- Time step %d, Newton solve on globally derefined mesh:\n", n);
         if (!nls.solve_newton(Tuple<Solution*>(&C_prev_newton, &phi_prev_newton), 
                               NEWTON_TOL_COARSE, NEWTON_MAX_ITER, verbose))
           error("Newton's method did not converge.");
       }
       
-      cpu_time.tick();
       Csln_coarse.copy(&C_prev_newton);
       phisln_coarse.copy(&phi_prev_newton);
     } 
@@ -312,7 +341,7 @@ int main (int argc, char* argv[]) {
     double err_est;
     do {
       // Time measurement
-      cpu_time.tick(HERMES_SKIP);
+      cpu_time.tick();
       RefSystem rs(&nls);
 
       // Set initial condition for the Newton's method on the fine mesh.
@@ -327,19 +356,13 @@ int main (int argc, char* argv[]) {
                           Tuple<Solution*>(&C_prev_newton, &phi_prev_newton));
       }
       
-      //Time measruement
-      cpu_time.tick();
       rs.solve_newton(Tuple<Solution*>(&C_prev_newton, &phi_prev_newton), 
           NEWTON_TOL_FINE, NEWTON_MAX_ITER, verbose);
       
       Csln_fine.copy(&C_prev_newton);
       phisln_fine.copy(&phi_prev_newton);
       
-      //Time measurement
-      cpu_time.tick(HERMES_SKIP);
-
       // Calculate element errors and total estimate
-      info("Calculating error.");
       H1Adapt hp(&nls);
       hp.set_solutions(Tuple<Solution*>(&Csln_coarse, &phisln_coarse), 
           Tuple<Solution*>(&Csln_fine, &phisln_fine));
@@ -353,12 +376,7 @@ int main (int argc, char* argv[]) {
         done = true;
       } else {
         
-        //Time measurement
-        cpu_time.tick(HERMES_SKIP);
-
         hp.adapt(&selector, THRESHOLD, STRATEGY, MESH_REGULARITY);
-        //Time measurement
-        cpu_time.tick();
 
         info("NDOF after adapting: %d", nls.get_num_dofs());
         if (nls.get_num_dofs() >= NDOF_STOP) {
@@ -369,8 +387,6 @@ int main (int argc, char* argv[]) {
         info("---- Time step %d, adaptivity step %d, projecting fine mesh solution on new coarse mesh:\n",
               n, as);
         
-        //Time measurement
-        cpu_time.tick(HERMES_SKIP);
 
         // Project the fine mesh solution on the new coarse mesh.
         if (SOLVE_ON_COARSE_MESH) 
@@ -389,9 +405,6 @@ int main (int argc, char* argv[]) {
             error("Newton's method did not converge.");
         }
       
-        //Time measurement
-        cpu_time.tick();
-
         // Store the result in sln_coarse.
         Csln_coarse.copy(&C_prev_newton);
         phisln_coarse.copy(&phi_prev_newton);
@@ -399,21 +412,24 @@ int main (int argc, char* argv[]) {
         as++;
       }
       
+      cpu_time.tick();
       // Visualize the solution and mesh.
       sprintf(title, "hp-mesh (C), time level %d, adaptivity %d", n, as);
       Cordview.set_title(title);
       sprintf(title, "hp-mesh (phi), time level %d, adaptivity %d", n, as);
       phiordview.set_title(title);
-      Cordview.show(&Cspace);
-      phiordview.show(&phispace);
-      Cview.show(&C_prev_newton);
-      phiview.show(&phi_prev_newton);
+      //Cordview.show(&Cspace);
+      //phiordview.show(&phispace);
+      //Cview.show(&C_prev_newton);
+      //phiview.show(&phi_prev_newton);
       #ifdef SCREENSHOT
       Cordview.save_numbered_screenshot("screenshots/Cord%03d.bmp", at_index, true);
       phiordview.save_numbered_screenshot("screenshots/phiord%03d.bmp", at_index, true);
       #endif
       at_index++;
+      cpu_time.tick(HERMES_SKIP);
     } while (!done);
+    cpu_time.tick();
     graph_time_err.add_values(n * TAU, err_est);
     graph_time_err.save("time_error.dat");
     graph_time_dof.add_values(n * TAU,  Cspace.get_num_dofs() + phispace.get_num_dofs());
@@ -426,7 +442,7 @@ int main (int argc, char* argv[]) {
     } else {
       sprintf(title, "phi after time step %d", n);
     }
-    phiview.set_title(title);
+    /*phiview.set_title(title);
     phiview.show(&phi_prev_newton);
     if (n == 1) {
       sprintf(title, "C after time step %d, adjust the graph and PRESS ANY KEY", n);
@@ -444,11 +460,13 @@ int main (int argc, char* argv[]) {
       // which is way more informative in case of Nernst Planck.
       //View::wait(H2DV_WAIT_KEYPRESS);
     }
+    */
+    cpu_time.tick(HERMES_SKIP);
     phi_prev_time.copy(&phisln_fine);
     C_prev_time.copy(&Csln_fine);
 
   }
-  View::wait();
+  //View::wait();
 }
 
 /// \}
